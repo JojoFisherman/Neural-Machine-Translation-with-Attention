@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from typing import List, Dict
 from utils import idx2sentence, sentence2idx
+from collections import namedtuple
 
 Hypothesis = namedtuple("Hypothesis", ["value", "score"])
 
