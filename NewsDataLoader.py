@@ -105,7 +105,6 @@ class NewsDataLoader:
         self.sos_id = self.stoi["<sos>"]
         self.eos_id = self.stoi["<eos>"]
 
-
     def __iter__(self):
         if self.mode == "train":
             dataloader = self.train_dataloader
