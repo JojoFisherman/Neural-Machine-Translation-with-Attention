@@ -1,4 +1,6 @@
 import numpy as np
+import nltk
+from typing import List
 
 
 def evaluate_ppl(total_loss: float, n_predict_words: int):
@@ -9,3 +11,12 @@ def evaluate_ppl(total_loss: float, n_predict_words: int):
     """
     ppl = np.exp(total_loss / n_predict_words)
     return ppl
+
+
+def evaluate_bleu(
+    true_sequence: List[str], predicted_sequence: List[str]
+) -> float:
+    score = nltk.translate.bleu_score.sentence_bleu(
+        [true_sequence], predicted_sequence
+    )
+    return score

@@ -15,7 +15,6 @@ class NMT(nn.Module):
         bidir: bool = False,
         dropout_p: float = 0.5,
         rnn_type: str = "lstm",
-        teacher_forcing_ratio: float = 0.5,
     ):
         """
         Args:
@@ -27,8 +26,6 @@ class NMT(nn.Module):
             bidir (bool): Use bi-directional.
             dropout_p (float): The dropout probability.
             rnn_type (str): The type of rnn to use (gru/lstm).
-            teacher_forcing_ratio (float): The probability that teacher forcing
-                will be used.
         """
         super().__init__()
         self.src_vocab_size = src_vocab_size
@@ -37,7 +34,6 @@ class NMT(nn.Module):
         self.bidir = bidir
         self.dropout_p = dropout_p
         self.rnn_type = rnn_type.lower()
-        self.teacher_forcing_ratio = teacher_forcing_ratio
 
         self.encoder = Encoder(
             src_vocab_size, embedding_dim, hidden_dim, n_layers, bidir=bidir
@@ -70,6 +66,7 @@ class NMT(nn.Module):
         y: torch.Tensor,
         encoder_lengths: torch.Tensor,
         encoder_hidden: torch.Tensor,
+        teacher_forcing_ratio: float = 0.5,
     ):
         """
         Args:
@@ -91,6 +88,10 @@ class NMT(nn.Module):
             x, encoder_lengths, encoder_hidden
         )
         preds = self.decoder(
-            y, decoder_hidden, encoder_outputs, encoder_lengths
+            y,
+            decoder_hidden,
+            encoder_outputs,
+            encoder_lengths,
+            teacher_forcing_ratio,
         )
         return preds

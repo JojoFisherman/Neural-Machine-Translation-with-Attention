@@ -16,7 +16,6 @@ class Decoder(nn.Module):
         n_layers: int = 1,
         dropout_p: float = 0.5,
         rnn_type: str = "lstm",
-        teacher_forcing_ratio: float = 0.5,
     ):
         """
         Args:
@@ -26,8 +25,6 @@ class Decoder(nn.Module):
             n_layers (int): The number of rnns stacking together.
             dropout_p (float): The dropout probability.
             rnn_type (str): The type of rnn to use (gru/lstm).
-            teacher_forcing_ratio (float): The probability that teacher forcing
-                will be used.
         """
         super().__init__()
 
@@ -37,7 +34,6 @@ class Decoder(nn.Module):
 
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
         self.dropout = nn.Dropout(dropout_p)
-        self.teacher_forcing_ratio = teacher_forcing_ratio
         if rnn_type.lower() == "gru":
             rnn = nn.GRU
         elif rnn_type.lower() == "lstm":
@@ -61,6 +57,7 @@ class Decoder(nn.Module):
         hidden: torch.Tensor,
         encoder_outputs: torch.Tensor,
         encoder_lengths: torch.Tensor,
+        teacher_forcing_ratio: float = 0.5,
     ):
         """
         Args:
@@ -76,7 +73,7 @@ class Decoder(nn.Module):
 
         """
         use_teacher_forcing = (
-            True if random.random() < self.teacher_forcing_ratio else False
+            True if random.random() < teacher_forcing_ratio else False
         )
 
         # the <sos> tag

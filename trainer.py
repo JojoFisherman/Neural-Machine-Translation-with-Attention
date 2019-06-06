@@ -1,28 +1,32 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import argparse
 from preprocess import transform
-from utils import progress_bar
-from metrics.metrics import evaluate_ppl
+from utils import progress_bar, idx2sentence, save_checkpoint
+from metrics.metrics import evaluate_ppl, evaluate_bleu
 
 #  from encoder import Encoder
 #  from decoder import Decoder
 from models.nmt import NMT
 from eng2freDataset import Dataset
+from NewsDataLoader import NewsDataLoader
 
 N_EPOCH = 50
 BATCH_SIZE = 64
 EMBEDDING_DIM = 300
-HIDDEN_DIM = 1000
+HIDDEN_DIM = 500
 LR = 0.001
 RESCHEDULED = False
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+torch.backends.cudnn.benchmark = True
+parser = argparse.ArgumentParser()
+parser.add_argument("--resume", "-r", type=str, help="path of checkpoint")
 
 
 def train(
-    train_dataloader,
-    val_dataloader,
+    dataloader,
     batch_size,
     n_epochs,
     rnn_type,
@@ -36,10 +40,12 @@ def train(
     learning_rate,
     dropout_p,
     metric,
-    savename,
     device,
+    savename="model",
     pretrained_emb=None,
+    resume_path=None,
 ):
+
     model = nn.DataParallel(
         NMT(
             src_vocab_size,
@@ -50,26 +56,45 @@ def train(
             bidir,
             dropout_p,
             rnn_type.lower(),
-            teacher_forcing_ratio,
         ).to(device)
     )
-    model.module.init_weight()
-    criterion = nn.NLLLoss(ignore_index=0)
-    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
-    for epoch in range(n_epochs):
-        losses = []
-        for i, (train_X, train_y, len_X, len_y) in enumerate(train_dataloader):
+    start_epoch = 0
+    model.module.init_weight()
+    criterion = nn.NLLLoss(ignore_index=dataloader.pad_id)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.1, patience=5
+    )
+    if resume_path:
+        checkpoint = torch.load(resume_path)
+        model.load_state_dict(checkpoint["net"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        scheduler.load_state_dict(checkpoint["scheduler"])
+        save_checkpoint.best = checkpoint["bleu"]
+        start_epoch = checkpoint["epoch"] + 1
+        for p in model.parameters():
+            p.requires_grad = True
+
+    for epoch in range(start_epoch, n_epochs):
+        running_loss = 0.0
+        running_total = 0
+        n_predict_words = 0
+        model.train()
+        for i, (train_X, len_X, train_y, len_y) in enumerate(
+            dataloader("train")
+        ):
             train_X = train_X.to(DEVICE)
             train_y = train_y.to(DEVICE)
             hidden = model.module.init_hidden(train_X.shape[0])
             for h in hidden:
                 h.to(device)
 
-            log_p = model(train_X, train_y, torch.tensor(len_X), hidden)
+            log_p = model(
+                train_X, train_y, len_X, hidden, teacher_forcing_ratio
+            )
             # remove <sos>
             loss = criterion(log_p, train_y[:, 1:].reshape(-1))
-            losses.append(loss.item())
 
             optimizer.zero_grad()
             loss.backward()
@@ -77,61 +102,97 @@ def train(
                 model.parameters(), 5.0
             )  # gradient clipping
             optimizer.step()
+
+            # statistics
+            running_total += train_X.shape[0]
+            running_loss += loss.item()
+            n_predict_words += len_y.sum().item() - len_y.shape[0]
+            _loss = running_loss / running_total
+
+            progress_bar(
+                running_total,
+                dataloader.n_examples,
+                epoch,
+                n_epochs,
+                {
+                    "loss": _loss,
+                    "ppl": evaluate_ppl(running_loss, n_predict_words),
+                },
+            )
+        _score = validate(dataloader, model, criterion, epoch, device)
+        save_checkpoint(
+            {
+                "net": model.state_dict(),
+                "epoch": epoch,
+                "optimizer": optimizer.state_dict(),
+            },
+            "bleu",
+            _score,
+            epoch,
+            savename,
+        )
+        scheduler.step(_loss)
+
+
+def validate(dataloader, model, loss_fn, epoch, device):
+    model.eval()
+    running_loss = 0.0
+    running_total = 0
+    running_scores = 0.0
+
+    with torch.no_grad():
+        for i, (val_X, len_X, val_y, len_y) in enumerate(dataloader("val")):
+            val_X = val_X.to(device)
+            val_y = val_y.to(device)
+
+            hidden = model.module.init_hidden(val_X.shape[0])
+            for h in hidden:
+                h.to(device)
+
+            # log_p: (batch , (tgt_len-1), tgt_vocab_size)
+            log_p = model(val_X, val_y, len_X, hidden, 0.0)
+            loss = loss_fn(log_p, val_y[:, 1:].reshape(-1))
+            running_loss += loss.item()
+            running_total += val_X.shape[0]
+
+            log_p = log_p.reshape(val_y.shape[0], val_y.shape[1] - 1, -1)
+            # decoded: (batch, tgt_len-1) without <sos>
+            decoded = log_p.max(dim=2)[1]
+            for true, pred in zip(val_y[:, 1:], decoded):
+                running_scores += evaluate_bleu(
+                    idx2sentence(true, dataloader.itos),
+                    idx2sentence(pred, dataloader.itos),
+                )
+
+        _loss = running_loss / running_total
+        _score = running_scores / running_total
+
+        progress_bar(msg={"val-loss": _loss, "bleu": _score}, train=False)
+    return _score
 
 
 def _main():
-    dataset = Dataset("./data/eng-fra.txt", transform=transform)
-    data_loader = dataset.get_loader(BATCH_SIZE, True)
-    model = nn.DataParallel(
-        NMT(
-            dataset.get_source_vocab_size(),
-            dataset.get_target_vocab_size(),
-            EMBEDDING_DIM,
-            HIDDEN_DIM,
-            3,
-            True,
-            0.5,
-            "lstm",
-        ).to(DEVICE)
+    args = parser.parse_args()
+
+    data_loader = NewsDataLoader(debug=True)
+    train(
+        data_loader,
+        BATCH_SIZE,
+        N_EPOCH,
+        "lstm",
+        True,
+        3,
+        HIDDEN_DIM,
+        EMBEDDING_DIM,
+        0.5,
+        len(data_loader.stoi),
+        len(data_loader.stoi),
+        LR,
+        0.5,
+        None,
+        DEVICE,
+        resume_path=args.resume,
     )
-    model.module.init_weight()
-    criterion = nn.NLLLoss(ignore_index=0)
-    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-
-    for epoch in range(N_EPOCH):
-        losses = []
-        for i, (train_X, train_y, len_X, len_y) in enumerate(data_loader):
-            train_X = train_X.to(DEVICE)
-            train_y = train_y.to(DEVICE)
-
-            hidden = model.module.init_hidden(train_X.shape[0])
-            for h in hidden:
-                h.to(DEVICE)
-            preds = model(train_X, train_y, torch.tensor(len_X), hidden)
-
-            loss = criterion(preds, train_y[:, 1:].reshape(-1))
-            losses.append(loss.item())
-
-            optimizer.zero_grad()
-
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(
-                model.parameters(), 5.0
-            )  # gradient clipping
-            optimizer.step()
-
-            if i % 200 == 0:
-                print(
-                    "[%02d/%d] [%03d/%d] mean_loss : %0.2f"
-                    % (
-                        epoch,
-                        N_EPOCH,
-                        i,
-                        len(dataset) // BATCH_SIZE,
-                        np.mean(losses),
-                    )
-                )
-                losses = []
 
 
 if __name__ == "__main__":

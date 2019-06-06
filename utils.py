@@ -40,7 +40,6 @@ def idx2sentence(idxes: torch.Tensor, itos) -> str:
 
 
 def progress_bar(
-    batch_size=0,
     value=1,
     endvalue=1,
     epoch=1,
@@ -52,15 +51,20 @@ def progress_bar(
     if "start_time" not in progress_bar.__dict__ or value == 0:
         progress_bar.start_time = time()
 
+    if "start" not in progress_bar.__dict__:
+        progress_bar.start = True
+
     t = time() - progress_bar.start_time
     percent = value / endvalue
     arrow = "=" * int((percent * bar_length) - 1) + ">"
     spaces = " " * (bar_length - len(arrow))
     msg = " - ".join([f"{k}: {v:.4f}" for k, v in msg.items()])
 
-    if value == batch_size:
+    #  if value == batch_size:
+    if progress_bar.start:
+        progress_bar.start = False
         print(f"Epoch {epoch+1}/{n_epoch}", flush=True)
-        progress_bar.start_time = time()
+        #  progress_bar.start_time = time()
 
     if train:
         print(
@@ -68,11 +72,16 @@ def progress_bar(
             end="" if value == endvalue else "\r",
             flush=True,
         )
-    elif msg:
-        print(f" - {msg}", flush=True)
+        return
+    if msg:
+        print(f" - {msg}", end="", flush=True)
+
+    print()
+    progress_bar.start = True
+    progress_bar.start_time = time()
 
 
-def save_checkpoint(state, metric, value, epoch, filename="checkpoint.pth"):
+def save_checkpoint(state, metric, value, epoch, filename="model"):
     if "best" not in save_checkpoint.__dict__:
         save_checkpoint.best = 0.0
     if not os.path.isdir("save"):
@@ -83,11 +92,7 @@ def save_checkpoint(state, metric, value, epoch, filename="checkpoint.pth"):
         print("Saving best model...")
         save_checkpoint.best = value
         state[metric] = value
-        torch.save(
-            state,
-            #  os.path.join('checkpoint', f'model_best_{metric}_{value}.pth')
-            os.path.join("save", f"{filename}_best.pth"),
-        )
+        torch.save(state, os.path.join("save", f"{filename}_best.pth"))
 
     torch.save(state, os.path.join("save", f"{filename}_checkpoint.pth"))
 
