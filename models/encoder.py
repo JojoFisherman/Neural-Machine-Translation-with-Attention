@@ -110,6 +110,10 @@ class Encoder(nn.Module):
 
         total_length = inputs.shape[1]
         embedded = self.embedding(inputs)
+        if (input_lengths == 0).any():
+            import pdb
+
+            pdb.set_trace()
         packed = pack_padded_sequence(
             embedded, input_lengths, batch_first=True
         )

@@ -15,6 +15,7 @@ class NMT(nn.Module):
         bidir: bool = False,
         dropout_p: float = 0.5,
         rnn_type: str = "lstm",
+        **kwargs,
     ):
         """
         Args:

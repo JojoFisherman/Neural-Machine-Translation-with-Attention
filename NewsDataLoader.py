@@ -4,6 +4,7 @@ import spacy
 import random
 import dill
 import torch
+import json
 import torchtext.vocab as vocab
 import torchtext.data as data
 from torchtext.data import BucketIterator
@@ -40,7 +41,10 @@ class NewsDataset(data.Dataset):
                     break
 
         super().__init__(examples, fields, **kwargs)
-        for example in examples:
+        self.examples = [
+            example for example in self.examples if len(example.src) > 20
+        ]
+        for example in self.examples:
             example.src = example.src[:max_src_len]
             example.tgt = ["<sos>"] + example.tgt + ["<eos>"]
 
@@ -49,25 +53,19 @@ class NewsDataLoader:
     def __init__(
         self,
         datapath="data",
-        load_field_path=None,
-        save_field_path=None,
+        save_path=None,
         embed_path=None,
         train=True,
         build_vocab=True,
         batch_size=64,
         val_size=0.2,
         debug=False,
+        save_wordidx=True,
     ):
         random.seed(SEED)
         state = random.getstate()
 
         fields = (TEXT, TEXT)
-        if load_field_path:
-            build_vocab = False
-            with open(load_field_path, "rb") as f:
-                text = dill.load(f)
-                fields = (text, text)
-
         train_dataset = NewsDataset(
             path=os.path.join(datapath, "news_train"),
             exts=(".en", ".de"),
@@ -93,12 +91,8 @@ class NewsDataLoader:
                 TEXT.build_vocab(train_dataset, vectors=vec)
             else:
                 TEXT.build_vocab(
-                    train_dataset, vectors="glove.6B.300d", max_size=80000
+                    train_dataset, vectors="glove.6B.300d", max_size=40000
                 )
-
-        if save_field_path:
-            with open(save_field_path, "wb") as f:
-                dill.dump(fields[0], f)
 
         temp = BucketIterator.splits(
             (train_dataset, val_dataset, test_dataset),
@@ -115,6 +109,10 @@ class NewsDataLoader:
         self.sos_id = self.stoi["<sos>"]
         self.eos_id = self.stoi["<eos>"]
         self.pad_id = self.stoi["<pad>"]
+
+        if save_wordidx:
+            with open("data/vocab.json", "w") as f:
+                json.dump(self.stoi, f)
 
     def __iter__(self):
         if self.mode == "train":
@@ -155,7 +153,7 @@ class NewsDataLoader:
 
 
 if __name__ == "__main__":
-    dl = NewsDataLoader(load_field_path="data/field.pkl", debug=True)
+    dl = NewsDataLoader(debug=True)
     for x, len_x, y, len_y in dl("val"):
         import pdb
 

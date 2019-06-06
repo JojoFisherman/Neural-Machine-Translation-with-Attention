@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import argparse
 from preprocess import transform
-from utils import progress_bar, idx2sentence, save_checkpoint
+from utils import progress_bar, idx2sentence, save_checkpoint, get_params_dict
 from metrics.metrics import evaluate_ppl, evaluate_bleu
 
 #  from encoder import Encoder
@@ -23,10 +23,10 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch.backends.cudnn.benchmark = True
 parser = argparse.ArgumentParser()
 parser.add_argument("--resume", "-r", type=str, help="path of checkpoint")
+parser.add_argument("--config", "-c", type=str, help="path of the config json")
 
 
 def train(
-    dataloader,
     batch_size,
     n_epochs,
     rnn_type,
@@ -39,11 +39,13 @@ def train(
     tgt_vocab_size,
     learning_rate,
     dropout_p,
-    metric,
-    device,
+    dataloader,
+    metric=None,
+    device=DEVICE,
     savename="model",
     pretrained_emb=None,
     resume_path=None,
+    **kwargs,
 ):
 
     model = nn.DataParallel(
@@ -173,26 +175,37 @@ def validate(dataloader, model, loss_fn, epoch, device):
 
 def _main():
     args = parser.parse_args()
+    data_loader = NewsDataLoader(save_wordidx=True)
 
-    data_loader = NewsDataLoader(debug=True)
-    train(
-        data_loader,
-        BATCH_SIZE,
-        N_EPOCH,
-        "lstm",
-        True,
-        3,
-        HIDDEN_DIM,
-        EMBEDDING_DIM,
-        0.5,
-        len(data_loader.stoi),
-        len(data_loader.stoi),
-        LR,
-        0.5,
-        None,
-        DEVICE,
-        resume_path=args.resume,
-    )
+    if args.config:
+        config = get_params_dict(args.config)
+
+        train(
+            dataloader=data_loader,
+            **config,
+            src_vocab_size=len(data_loader.stoi),
+            tgt_vocab_size=len(data_loader.stoi),
+            resume_path=args.resume,
+        )
+
+    #  train(
+    #  data_loader,
+    #  BATCH_SIZE,
+    #  N_EPOCH,
+    #  "lstm",
+    #  True,
+    #  3,
+    #  HIDDEN_DIM,
+    #  EMBEDDING_DIM,
+    #  0.5,
+    #  len(data_loader.stoi),
+    #  len(data_loader.stoi),
+    #  LR,
+    #  0.5,
+    #  None,
+    #  DEVICE,
+    #  resume_path=args.resume,
+    #  )
 
 
 if __name__ == "__main__":
