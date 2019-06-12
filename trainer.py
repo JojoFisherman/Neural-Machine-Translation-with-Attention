@@ -22,7 +22,9 @@ RESCHEDULED = False
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch.backends.cudnn.benchmark = True
 parser = argparse.ArgumentParser()
-parser.add_argument("--resume", "-r", type=str, help="path of checkpoint")
+parser.add_argument(
+    "--resume", "-r", type=str, help="path of checkpoint to resume training"
+)
 parser.add_argument("--config", "-c", type=str, help="path of the config json")
 
 
@@ -127,6 +129,7 @@ def train(
                 "net": model.state_dict(),
                 "epoch": epoch,
                 "optimizer": optimizer.state_dict(),
+                "stoi": dataloader.stoi,
             },
             "bleu",
             _score,
