@@ -53,30 +53,40 @@ class NewsDataLoader:
     def __init__(
         self,
         datapath="data",
-        save_path=None,
+        use_save=False,
         embed_path=None,
         train=True,
         build_vocab=True,
         batch_size=64,
         val_size=0.2,
         debug=False,
-        save_wordidx=True,
     ):
         random.seed(SEED)
         state = random.getstate()
 
-        fields = (TEXT, TEXT)
+        self.fields = (TEXT, TEXT)
+        if use_save:
+            with open("data/dataset.pickle", "rb") as f:
+                text = dill.load(f)
+                self.fields = (text, text)
+                #  temp = dill.load(f)
+                #  train_dataset = f["train"]
+                #  val_dataset = f["val"]
+                #  test_dataset = f["test"]
+                #  text = f["field"]
+                build_vocab = False
+
         train_dataset = NewsDataset(
             path=os.path.join(datapath, "news_train"),
             exts=(".en", ".de"),
-            fields=fields,
+            fields=self.fields,
             debug=debug,
         )
 
         test_dataset = NewsDataset(
             path=os.path.join(datapath, "news_test"),
             exts=(".en", ".de"),
-            fields=fields,
+            fields=self.fields,
         )
 
         train_dataset, val_dataset = train_dataset.split(
@@ -90,9 +100,12 @@ class NewsDataLoader:
                 vec = vocab.Vectors(embed, cache=path)
                 TEXT.build_vocab(train_dataset, vectors=vec)
             else:
-                TEXT.build_vocab(
-                    train_dataset, vectors="glove.6B.300d", max_size=40000
-                )
+                #  TEXT.build_vocab(
+                #  train_dataset, vectors="glove.6B.300d", max_size=40000
+                #  )
+
+                ## DEBUG
+                TEXT.build_vocab(train_dataset, max_size=40000)
 
         temp = BucketIterator.splits(
             (train_dataset, val_dataset, test_dataset),
@@ -104,15 +117,21 @@ class NewsDataLoader:
             shuffle=True,
         )
         self.train_dataloader, self.val_dataloader, self.test_dataloader = temp
-        self.stoi = fields[0].vocab.stoi
-        self.itos = fields[0].vocab.itos
+        self.stoi = self.fields[0].vocab.stoi
+        self.itos = self.fields[0].vocab.itos
         self.sos_id = self.stoi["<sos>"]
         self.eos_id = self.stoi["<eos>"]
         self.pad_id = self.stoi["<pad>"]
 
-        if save_wordidx:
-            with open("data/vocab.json", "w") as f:
-                json.dump(self.stoi, f)
+        with open("data/dataset.pickle", "wb") as f:
+            temp = {
+                "train": train_dataset,
+                "val": val_dataset,
+                "test": test_dataset,
+                "field": self.fields[0],
+            }
+            temp = self.fields[0]
+            dill.dump(temp, f)
 
     def __iter__(self):
         if self.mode == "train":
@@ -153,7 +172,7 @@ class NewsDataLoader:
 
 
 if __name__ == "__main__":
-    dl = NewsDataLoader(debug=True)
+    dl = NewsDataLoader(debug=True, use_save=True)
     for x, len_x, y, len_y in dl("val"):
         import pdb
 

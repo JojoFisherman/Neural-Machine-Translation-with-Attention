@@ -15,6 +15,7 @@ class NMT(nn.Module):
         bidir: bool = False,
         dropout_p: float = 0.5,
         rnn_type: str = "lstm",
+        pretrained_emb: torch.Tensor = None,
         **kwargs,
     ):
         """
@@ -27,6 +28,7 @@ class NMT(nn.Module):
             bidir (bool): Use bi-directional.
             dropout_p (float): The dropout probability.
             rnn_type (str): The type of rnn to use (gru/lstm).
+            pretrained_emb (torch.Tensor): The pretrained embeddings to use.
         """
         super().__init__()
         self.src_vocab_size = src_vocab_size
@@ -35,13 +37,26 @@ class NMT(nn.Module):
         self.bidir = bidir
         self.dropout_p = dropout_p
         self.rnn_type = rnn_type.lower()
+        self.pretrained_emb = pretrained_emb
+        if pretrained_emb is not None:
+            self.embedding = nn.Embedding(
+                pretrained_emb.shape[0], pretrained_emb.shape[1]
+            )
+        else:
+            self.embedding = nn.Embedding(src_vocab_size, embedding_dim)
 
         self.encoder = Encoder(
-            src_vocab_size, embedding_dim, hidden_dim, n_layers, bidir=bidir
+            src_vocab_size,
+            embedding_dim,
+            self.embedding,
+            hidden_dim,
+            n_layers,
+            bidir=bidir,
         )
         self.decoder = Decoder(
             tgt_vocab_size,
             embedding_dim,
+            self.embedding,
             hidden_dim * 2,
             n_layers,
             dropout_p,
@@ -60,6 +75,8 @@ class NMT(nn.Module):
     def init_weight(self):
         self.encoder.init_weight()
         self.decoder.init_weight()
+        if self.pretrained_emb is not None:
+            self.embedding.weight.data.copy_(self.pretrained_emb)
 
     def forward(
         self,
@@ -82,8 +99,6 @@ class NMT(nn.Module):
         Returns:
             log_p (torch.Tensor): The log probability in every time step
                 ```(batch * (tgt_len-1), tgt_vocab_size)```
-
-
         """
         encoder_outputs, decoder_hidden = self.encoder(
             x, encoder_lengths, encoder_hidden

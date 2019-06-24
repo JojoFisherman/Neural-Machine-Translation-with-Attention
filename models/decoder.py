@@ -12,6 +12,7 @@ class Decoder(nn.Module):
         self,
         vocab_size: int,
         embedding_dim: int,
+        embedding: nn.Module,
         hidden_dim: int,
         n_layers: int = 1,
         dropout_p: float = 0.5,
@@ -32,7 +33,8 @@ class Decoder(nn.Module):
         self.hidden_dim = hidden_dim
         self.n_layers = n_layers
 
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        #  self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.embedding = embedding
         self.dropout = nn.Dropout(dropout_p)
         if rnn_type.lower() == "gru":
             rnn = nn.GRU
@@ -47,7 +49,7 @@ class Decoder(nn.Module):
         self.attention = Attention(hidden_dim)
 
     def init_weight(self):
-        nn.init.xavier_uniform_(self.embedding.weight)
+        #  nn.init.xavier_uniform_(self.embedding.weight)
         nn.init.xavier_uniform_(self.w_s.weight)
         self.rnn.init_weight()
 

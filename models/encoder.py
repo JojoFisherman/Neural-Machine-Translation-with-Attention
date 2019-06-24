@@ -13,6 +13,7 @@ class Encoder(nn.Module):
         self,
         vocab_size: int,
         embedding_dim: int,
+        embedding: nn.Module,
         hidden_dim: int,
         n_layers: int = 1,
         bidir: bool = False,
@@ -32,7 +33,8 @@ class Encoder(nn.Module):
         self.n_dir = 2 if bidir else 1
         self.n_layers = n_layers
         self.hidden_dim = hidden_dim
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        #  self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.embedding = embedding
         self.rnn_type = rnn_type.lower()
         if rnn_type.lower() == "gru":
             rnn = nn.GRU
@@ -66,7 +68,7 @@ class Encoder(nn.Module):
             )
 
     def init_weight(self):
-        nn.init.xavier_uniform_(self.embedding.weight)
+        #  nn.init.xavier_uniform_(self.embedding.weight)
         ih = (
             param.data
             for name, param in self.rnn.named_parameters()

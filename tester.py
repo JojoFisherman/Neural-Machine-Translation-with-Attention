@@ -14,15 +14,21 @@ def load_model(path, config_file: str, vocab_file: str):
     model = nmt(**config, src_vocab_size=len(stoi), tgt_vocab_size=len(stoi))
     checkpoint = torch.load(path)
     model.load_state_dict(checkpoint["net"])
+    itos = checkpoint["itos"]
+    return model, itos
 
 
-def test(model, dataloader, device=DEVICE):
+def test(model, dataloader, itos, device=DEVICE):
+    stoi = {}
+    for i, s in enumerate(itos):
+        stoi[s] = i
+
     model.eval()
     with torch.no_grad():
         for test_X, test_y in dataloader:
             for x, y in zip(test_X, test_y):
-                x = idx2sentence(x, dataloader.itos)
-                y = idx2sentence(y, dataloader.itos)
+                x = idx2sentence(x, itos)
+                y = idx2sentence(y, itos)
                 best_hypothesis = beam_search(
                     dataloader.stoi,
                     dataloader.itos,

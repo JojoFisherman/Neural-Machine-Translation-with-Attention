@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import os
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
 import argparse
 from preprocess import transform
 from utils import progress_bar, idx2sentence, save_checkpoint, get_params_dict
@@ -10,7 +13,7 @@ from metrics.metrics import evaluate_ppl, evaluate_bleu
 #  from decoder import Decoder
 from models.nmt import NMT
 from eng2freDataset import Dataset
-from NewsDataLoader import NewsDataLoader
+from NewsDataLoader import NewsDataLoader, TEXT
 
 N_EPOCH = 50
 BATCH_SIZE = 64
@@ -22,10 +25,7 @@ RESCHEDULED = False
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch.backends.cudnn.benchmark = True
 parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--resume", "-r", type=str, help="path of checkpoint to resume training"
-)
-parser.add_argument("--config", "-c", type=str, help="path of the config json")
+parser.add_argument("--resume", "-r", type=bool, help="Resume training")
 
 
 def train(
@@ -46,7 +46,7 @@ def train(
     device=DEVICE,
     savename="model",
     pretrained_emb=None,
-    resume_path=None,
+    is_resume=False,
     **kwargs,
 ):
 
@@ -70,12 +70,13 @@ def train(
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.1, patience=5
     )
-    if resume_path:
-        checkpoint = torch.load(resume_path)
+    if is_resume:
+        checkpoint = torch.load(os.path.join("save", "model_checkpoint.pth"))
         model.load_state_dict(checkpoint["net"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         scheduler.load_state_dict(checkpoint["scheduler"])
         save_checkpoint.best = checkpoint["bleu"]
+
         start_epoch = checkpoint["epoch"] + 1
         for p in model.parameters():
             p.requires_grad = True
@@ -129,7 +130,7 @@ def train(
                 "net": model.state_dict(),
                 "epoch": epoch,
                 "optimizer": optimizer.state_dict(),
-                "stoi": dataloader.stoi,
+                "itos": dataloader.itos,
             },
             "bleu",
             _score,
@@ -178,37 +179,20 @@ def validate(dataloader, model, loss_fn, epoch, device):
 
 def _main():
     args = parser.parse_args()
-    data_loader = NewsDataLoader(save_wordidx=True)
 
-    if args.config:
-        config = get_params_dict(args.config)
+    config = get_params_dict("config.json")
+    if args.resume:
+        dataloader = NewsDataLoader(use_save=True, debug=True)
+    else:
+        dataloader = NewsDataLoader(debug=True)
 
-        train(
-            dataloader=data_loader,
-            **config,
-            src_vocab_size=len(data_loader.stoi),
-            tgt_vocab_size=len(data_loader.stoi),
-            resume_path=args.resume,
-        )
-
-    #  train(
-    #  data_loader,
-    #  BATCH_SIZE,
-    #  N_EPOCH,
-    #  "lstm",
-    #  True,
-    #  3,
-    #  HIDDEN_DIM,
-    #  EMBEDDING_DIM,
-    #  0.5,
-    #  len(data_loader.stoi),
-    #  len(data_loader.stoi),
-    #  LR,
-    #  0.5,
-    #  None,
-    #  DEVICE,
-    #  resume_path=args.resume,
-    #  )
+    train(
+        dataloader=dataloader,
+        **config,
+        src_vocab_size=len(dataloader.stoi),
+        tgt_vocab_size=len(dataloader.stoi),
+        is_resume=args.resume,
+    )
 
 
 if __name__ == "__main__":
