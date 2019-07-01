@@ -25,7 +25,9 @@ RESCHEDULED = False
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch.backends.cudnn.benchmark = True
 parser = argparse.ArgumentParser()
-parser.add_argument("--resume", "-r", type=bool, help="Resume training")
+parser.add_argument(
+    "--resume", "-r", action="store_true", help="Resume training"
+)
 
 
 def train(
@@ -72,7 +74,7 @@ def train(
     )
     if is_resume:
         checkpoint = torch.load(os.path.join("save", "model_checkpoint.pth"))
-        model.load_state_dict(checkpoint["net"])
+        model.module.load_state_dict(checkpoint["net"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         scheduler.load_state_dict(checkpoint["scheduler"])
         save_checkpoint.best = checkpoint["bleu"]
@@ -91,9 +93,10 @@ def train(
         ):
             train_X = train_X.to(DEVICE)
             train_y = train_y.to(DEVICE)
-            hidden = model.module.init_hidden(train_X.shape[0])
-            for h in hidden:
+            hidden = [
                 h.to(device)
+                for h in model.module.init_hidden(train_X.shape[0])
+            ]
 
             log_p = model(
                 train_X, train_y, len_X, hidden, teacher_forcing_ratio
@@ -121,15 +124,18 @@ def train(
                 n_epochs,
                 {
                     "loss": _loss,
+                    "current_loss": loss.item(),
                     "ppl": evaluate_ppl(running_loss, n_predict_words),
                 },
             )
         _score = validate(dataloader, model, criterion, epoch, device)
+        scheduler.step(_loss)
         save_checkpoint(
             {
-                "net": model.state_dict(),
+                "net": model.module.state_dict(),
                 "epoch": epoch,
                 "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
                 "itos": dataloader.itos,
             },
             "bleu",
@@ -137,7 +143,6 @@ def train(
             epoch,
             savename,
         )
-        scheduler.step(_loss)
 
 
 def validate(dataloader, model, loss_fn, epoch, device):
@@ -170,10 +175,10 @@ def validate(dataloader, model, loss_fn, epoch, device):
                     idx2sentence(pred, dataloader.itos),
                 )
 
-        _loss = running_loss / running_total
-        _score = running_scores / running_total
+    _loss = running_loss / running_total
+    _score = running_scores / running_total
 
-        progress_bar(msg={"val-loss": _loss, "bleu": _score}, train=False)
+    progress_bar(msg={"val-loss": _loss, "bleu": _score}, train=False)
     return _score
 
 
@@ -182,9 +187,9 @@ def _main():
 
     config = get_params_dict("config.json")
     if args.resume:
-        dataloader = NewsDataLoader(use_save=True, debug=True)
+        dataloader = NewsDataLoader(use_save=True, debug=False)
     else:
-        dataloader = NewsDataLoader(debug=True)
+        dataloader = NewsDataLoader(debug=False)
 
     train(
         dataloader=dataloader,
@@ -192,6 +197,7 @@ def _main():
         src_vocab_size=len(dataloader.stoi),
         tgt_vocab_size=len(dataloader.stoi),
         is_resume=args.resume,
+        pretrained_emb=dataloader.fields[0].vocab.vectors,
     )
 
 

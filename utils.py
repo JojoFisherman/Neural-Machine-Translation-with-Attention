@@ -5,6 +5,8 @@ import json
 from time import time
 from typing import Dict
 
+spacy = spacy.load("en_core_web_sm")
+
 
 def spacy_tokenize(x):
     return [tok.text for tok in spacy.tokenizer(x)]
@@ -29,6 +31,7 @@ def sentence2idx(sentence, stoi):
         sentence = spacy_tokenize(sentence)
     for w in sentence:
         w = stoi[w]
+    sentence = [[stoi[w] for w in sentence]]
     return torch.tensor(sentence)
 
 
@@ -36,7 +39,8 @@ def idx2sentence(idxes: torch.Tensor, itos) -> str:
     sentence = []
     for idx in idxes:
         sentence.append(itos[idx.item()])
-    return " ".join(sentence)
+    return sentence
+    #  return " ".join(sentence)
 
 
 def progress_bar(

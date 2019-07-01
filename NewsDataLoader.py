@@ -24,7 +24,7 @@ TEXT = torchtext.data.Field(
 
 class NewsDataset(data.Dataset):
     def __init__(
-        self, path, exts, fields, max_src_len=500, debug=False, **kwargs
+        self, path, exts, fields, max_src_len=100, debug=False, **kwargs
     ):
         fields = [("src", fields[0]), ("tgt", fields[1])]
         examples = []
@@ -59,33 +59,33 @@ class NewsDataLoader:
         build_vocab=True,
         batch_size=64,
         val_size=0.2,
+        max_src_len=100,
         debug=False,
     ):
         random.seed(SEED)
         state = random.getstate()
 
         self.fields = (TEXT, TEXT)
+        save = True
         if use_save:
+            save = False
+            build_vocab = False
             with open("data/dataset.pickle", "rb") as f:
                 text = dill.load(f)
                 self.fields = (text, text)
-                #  temp = dill.load(f)
-                #  train_dataset = f["train"]
-                #  val_dataset = f["val"]
-                #  test_dataset = f["test"]
-                #  text = f["field"]
-                build_vocab = False
 
         train_dataset = NewsDataset(
             path=os.path.join(datapath, "news_train"),
             exts=(".en", ".de"),
             fields=self.fields,
+            max_src_len=max_src_len,
             debug=debug,
         )
 
         test_dataset = NewsDataset(
             path=os.path.join(datapath, "news_test"),
             exts=(".en", ".de"),
+            max_src_len=max_src_len,
             fields=self.fields,
         )
 
@@ -100,15 +100,15 @@ class NewsDataLoader:
                 vec = vocab.Vectors(embed, cache=path)
                 TEXT.build_vocab(train_dataset, vectors=vec)
             else:
-                #  TEXT.build_vocab(
-                #  train_dataset, vectors="glove.6B.300d", max_size=40000
-                #  )
+                TEXT.build_vocab(
+                    train_dataset, vectors="glove.6B.300d", max_size=40000
+                )
 
                 ## DEBUG
-                TEXT.build_vocab(train_dataset, max_size=40000)
+                #  TEXT.build_vocab(train_dataset, max_size=40000)
 
         temp = BucketIterator.splits(
-            (train_dataset, val_dataset, test_dataset),
+            (train_dataset, val_dataset),
             batch_size=batch_size,
             device=-1,
             sort_key=lambda x: len(x.src),
@@ -116,22 +116,34 @@ class NewsDataLoader:
             repeat=False,
             shuffle=True,
         )
-        self.train_dataloader, self.val_dataloader, self.test_dataloader = temp
+
+        self.test_dataloader = BucketIterator(
+            test_dataset,
+            batch_size=batch_size,
+            device=-1,
+            sort_key=lambda x: len(x.src),
+            sort_within_batch=True,
+            repeat=False,
+            shuffle=False,
+        )
+
+        self.train_dataloader, self.val_dataloader = temp
         self.stoi = self.fields[0].vocab.stoi
         self.itos = self.fields[0].vocab.itos
         self.sos_id = self.stoi["<sos>"]
         self.eos_id = self.stoi["<eos>"]
         self.pad_id = self.stoi["<pad>"]
 
-        with open("data/dataset.pickle", "wb") as f:
-            temp = {
-                "train": train_dataset,
-                "val": val_dataset,
-                "test": test_dataset,
-                "field": self.fields[0],
-            }
-            temp = self.fields[0]
-            dill.dump(temp, f)
+        if save:
+            with open("data/dataset.pickle", "wb") as f:
+                temp = {
+                    "train": train_dataset,
+                    "val": val_dataset,
+                    "test": test_dataset,
+                    "field": self.fields[0],
+                }
+                temp = self.fields[0]
+                dill.dump(temp, f)
 
     def __iter__(self):
         if self.mode == "train":
@@ -173,7 +185,7 @@ class NewsDataLoader:
 
 if __name__ == "__main__":
     dl = NewsDataLoader(debug=True, use_save=True)
-    for x, len_x, y, len_y in dl("val"):
+    for x, len_x, y, len_y in dl("test"):
         import pdb
 
         pdb.set_trace()

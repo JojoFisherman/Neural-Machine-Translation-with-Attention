@@ -5,6 +5,7 @@ from utils import idx2sentence, sentence2idx
 from collections import namedtuple
 
 Hypothesis = namedtuple("Hypothesis", ["value", "score"])
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 def beam_search(
@@ -27,16 +28,19 @@ def beam_search(
         max_len (int): Maximum length for decoding.
 
     Returns:
+        List[Hypothesis]: All the finished hypothesis("value", "score").
     """
-    inputs = sentence2idx(input_sentence)
-    hidden = encoder.module.init_hidden(1)
-    encoder_length = torch.tensor([inputs.shape[0]])
+    inputs = sentence2idx(input_sentence, stoi).to(DEVICE)
+    hidden = [h.to(DEVICE) for h in encoder.init_hidden(1)]
+
+    encoder_length = torch.tensor([inputs.shape[0]]).to(inputs.device)
+
     encoder_outputs, hidden = encoder(inputs, encoder_length, hidden)
 
     hypotheses = [["<sos>"]]
-    hyp_scores = torch.zeros(len(hypotheses))
+    hyp_scores = torch.zeros(len(hypotheses)).to(DEVICE)
     completed_hypotheses = []
-    attn_h = torch.zeros(1, decoder.hidden_dim)
+    attn_h = torch.zeros(1, decoder.hidden_dim).to(DEVICE)
 
     t = 0
     while len(completed_hypotheses) < n_beam and t < max_len:
@@ -45,16 +49,17 @@ def beam_search(
 
         # (n_hyp, src_len, 2h)
         exp_encoder_outputs = encoder_outputs.expand(
-            n_hyp, encoder_outputs.shape[0], encoder_outputs.shape[1]
+            n_hyp, encoder_outputs.shape[1], encoder_outputs.shape[2]
         )
-        exp_encoder_length = encoder_length.expand(
-            n_hyp, encoder_length.shape[0]
-        )
+        exp_encoder_length = encoder_length.expand(n_hyp)
 
         # (n_hyp)
-        decoder_input = torch.tensor([stoi[hyp[-1]] for hyp in hypotheses])
+        decoder_input = torch.tensor([stoi[hyp[-1]] for hyp in hypotheses]).to(
+            DEVICE
+        )
         emb_input = decoder.embedding(decoder_input)
         emb_input = decoder.dropout(emb_input)
+
         hidden, attn_h, log_p = decoder.step(
             attn_h, emb_input, hidden, exp_encoder_outputs, exp_encoder_length
         )
@@ -103,7 +108,7 @@ def beam_search(
         attn_h = attn_h[live_hyp_ids]
 
         hypotheses = new_hypotheses
-        hyp_scores = torch.tensor(new_hyp_scores)
+        hyp_scores = torch.tensor(new_hyp_scores).to(DEVICE)
 
     completed_hypotheses.sort(key=lambda hyp: hyp.score, reverse=True)
     if len(completed_hypotheses) == 0:
