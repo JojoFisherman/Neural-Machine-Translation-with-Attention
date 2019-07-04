@@ -6,14 +6,20 @@ import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
 import argparse
 from preprocess import transform
-from utils import progress_bar, idx2sentence, save_checkpoint, get_params_dict
+from utils import (
+    progress_bar,
+    idx2sentence,
+    save_checkpoint,
+    get_lr,
+    get_params_dict,
+)
 from metrics.metrics import evaluate_ppl, evaluate_bleu
 
 #  from encoder import Encoder
 #  from decoder import Decoder
 from models.nmt import NMT
 from eng2freDataset import Dataset
-from NewsDataLoader import NewsDataLoader, TEXT
+from NewsDataLoader import NewsDataLoader
 
 N_EPOCH = 50
 BATCH_SIZE = 64
@@ -27,6 +33,13 @@ torch.backends.cudnn.benchmark = True
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--resume", "-r", action="store_true", help="Resume training"
+)
+parser.add_argument(
+    "--savename",
+    "-s",
+    type=str,
+    help="name for the model weights file",
+    default="model",
 )
 
 
@@ -43,7 +56,8 @@ def train(
     tgt_vocab_size,
     learning_rate,
     dropout_p,
-    dataloader,
+    train_dataloader,
+    val_dataloader,
     metric=None,
     device=DEVICE,
     savename="model",
@@ -62,12 +76,15 @@ def train(
             bidir,
             dropout_p,
             rnn_type.lower(),
+            pretrained_emb,
         ).to(device)
     )
+    print("num of vocab:", src_vocab_size)
 
     start_epoch = 0
     model.module.init_weight()
-    criterion = nn.NLLLoss(ignore_index=dataloader.pad_id)
+
+    criterion = nn.NLLLoss(ignore_index=train_dataloader.pad_id)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.1, patience=5
@@ -88,9 +105,7 @@ def train(
         running_total = 0
         n_predict_words = 0
         model.train()
-        for i, (train_X, len_X, train_y, len_y) in enumerate(
-            dataloader("train")
-        ):
+        for i, (train_X, len_X, train_y, len_y) in enumerate(train_dataloader):
             train_X = train_X.to(DEVICE)
             train_y = train_y.to(DEVICE)
             hidden = [
@@ -115,20 +130,20 @@ def train(
             running_total += train_X.shape[0]
             running_loss += loss.item()
             n_predict_words += len_y.sum().item() - len_y.shape[0]
-            _loss = running_loss / running_total
+            _loss = running_loss / (i + 1)
 
             progress_bar(
                 running_total,
-                dataloader.n_examples,
+                train_dataloader.n_examples,
                 epoch,
                 n_epochs,
                 {
                     "loss": _loss,
-                    "current_loss": loss.item(),
+                    "lr": get_lr(optimizer),
                     "ppl": evaluate_ppl(running_loss, n_predict_words),
                 },
             )
-        _score = validate(dataloader, model, criterion, epoch, device)
+        _score = validate(val_dataloader, model, criterion, epoch, device)
         scheduler.step(_loss)
         save_checkpoint(
             {
@@ -136,7 +151,7 @@ def train(
                 "epoch": epoch,
                 "optimizer": optimizer.state_dict(),
                 "scheduler": scheduler.state_dict(),
-                "itos": dataloader.itos,
+                "itos": train_dataloader.itos,
             },
             "bleu",
             _score,
@@ -152,7 +167,7 @@ def validate(dataloader, model, loss_fn, epoch, device):
     running_scores = 0.0
 
     with torch.no_grad():
-        for i, (val_X, len_X, val_y, len_y) in enumerate(dataloader("val")):
+        for i, (val_X, len_X, val_y, len_y) in enumerate(dataloader):
             val_X = val_X.to(device)
             val_y = val_y.to(device)
 
@@ -187,17 +202,27 @@ def _main():
 
     config = get_params_dict("config.json")
     if args.resume:
-        dataloader = NewsDataLoader(use_save=True, debug=False)
+        train_dataloader = NewsDataLoader(
+            csv_path="data/train.csv", use_save=True, debug=False
+        )
     else:
-        dataloader = NewsDataLoader(debug=False)
+        train_dataloader = NewsDataLoader(
+            csv_path="data/train.csv", save=True, debug=False
+        )
+
+    val_dataloader = NewsDataLoader(
+        csv_path="data/val.csv", build_vocab=False, use_save=True, debug=False
+    )
 
     train(
-        dataloader=dataloader,
+        train_dataloader=train_dataloader,
+        val_dataloader=val_dataloader,
         **config,
-        src_vocab_size=len(dataloader.stoi),
-        tgt_vocab_size=len(dataloader.stoi),
+        src_vocab_size=len(train_dataloader.stoi),
+        tgt_vocab_size=len(train_dataloader.stoi),
         is_resume=args.resume,
-        pretrained_emb=dataloader.fields[0].vocab.vectors,
+        pretrained_emb=train_dataloader.field.vocab.vectors,
+        savename=args.savename,
     )
 
 

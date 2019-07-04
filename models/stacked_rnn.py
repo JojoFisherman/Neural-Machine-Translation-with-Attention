@@ -30,7 +30,7 @@ class StackedLSTM(nn.Module):
         self.hidden_dim = hidden_dim
         self.layers = nn.ModuleList()
 
-        for _ in range(n_layers):
+        for i in range(n_layers):
             self.layers.append(nn.LSTMCell(input_dim, hidden_dim))
             input_dim = hidden_dim
 

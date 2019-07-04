@@ -26,13 +26,35 @@ def sequence_mask(lengths, max_len=None):
     )
 
 
+def get_params_dict(filename):
+    j = {}
+    if os.path.isfile(filename):
+        with open(filename, "r") as f:
+            j = json.load(f)
+    return j
+
+
+def load_model(path, config_file: str):
+    from models.nmt import NMT
+
+    config = get_params_dict(config_file)
+    checkpoint = torch.load(path)
+    itos = checkpoint["itos"]
+    model = NMT(**config, src_vocab_size=len(itos), tgt_vocab_size=len(itos))
+    model.load_state_dict(checkpoint["net"])
+    return model, itos
+
+
 def sentence2idx(sentence, stoi):
     if isinstance(sentence, str):
         sentence = spacy_tokenize(sentence)
+    temp = [[]]
     for w in sentence:
-        w = stoi[w]
-    sentence = [[stoi[w] for w in sentence]]
-    return torch.tensor(sentence)
+        #  if w not in stoi:
+        #  print(w + " not found in vocabulary")
+        temp[0].append(stoi.get(w, stoi["<unk>"]))
+    #  sentence = [[stoi.get(w, stoi["<unk>"]) for w in sentence]]
+    return torch.tensor(temp)
 
 
 def idx2sentence(idxes: torch.Tensor, itos) -> str:
@@ -62,7 +84,12 @@ def progress_bar(
     percent = value / endvalue
     arrow = "=" * int((percent * bar_length) - 1) + ">"
     spaces = " " * (bar_length - len(arrow))
-    msg = " - ".join([f"{k}: {v:.4f}" for k, v in msg.items()])
+    msg = " - ".join(
+        [
+            f"{k}: {v:.4f}" if k != "lr" else f"{k}: {v:.2E}"
+            for k, v in msg.items()
+        ]
+    )
 
     #  if value == batch_size:
     if progress_bar.start:
@@ -101,9 +128,8 @@ def save_checkpoint(state, metric, value, epoch, filename="model"):
     torch.save(state, os.path.join("save", f"{filename}_checkpoint.pth"))
 
 
-def get_params_dict(filename):
-    j = {}
-    if os.path.isfile(filename):
-        with open(filename, "r") as f:
-            j = json.load(f)
-    return j
+def get_lr(optimizer):
+    """ Get the current learning rate
+    """
+    for param_group in optimizer.param_groups:
+        return param_group["lr"]

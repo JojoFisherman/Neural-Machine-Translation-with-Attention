@@ -1,11 +1,44 @@
 import torch
 import torch.nn as nn
+import pandas as pd
+import argparse
+from tqdm import tqdm
+from NewsDataLoader import NewsDataLoader, spacy_tokenize
 from typing import List, Dict
-from utils import idx2sentence, sentence2idx
+from utils import idx2sentence, sentence2idx, load_model
 from collections import namedtuple
 
 Hypothesis = namedtuple("Hypothesis", ["value", "score"])
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--model",
+    type=str,
+    help="Path for the model weights file",
+    default="save/model_best.pth",
+)
+parser.add_argument(
+    "--input",
+    type=str,
+    help="Path for the input csv, the header for "
+    "the content of the articles should be named `content`",
+    default="data/test.csv",
+)
+
+parser.add_argument(
+    "--output",
+    type=str,
+    help="Path for the output csv",
+    default="data/test_output.csv",
+)
+
+parser.add_argument(
+    "--live",
+    action="store_true",
+    help="Feeding in the articles interactively "
+    "and manually through the command line",
+)
 
 
 def beam_search(
@@ -33,7 +66,7 @@ def beam_search(
     inputs = sentence2idx(input_sentence, stoi).to(DEVICE)
     hidden = [h.to(DEVICE) for h in encoder.init_hidden(1)]
 
-    encoder_length = torch.tensor([inputs.shape[0]]).to(inputs.device)
+    encoder_length = torch.tensor([inputs.shape[1]]).to(inputs.device)
 
     encoder_outputs, hidden = encoder(inputs, encoder_length, hidden)
 
@@ -116,3 +149,41 @@ def beam_search(
             Hypothesis(value=hypotheses[0][1:], score=hyp_scores[0].item())
         )
     return completed_hypotheses
+
+
+def _main():
+    args = parser.parse_args()
+    model, itos = load_model(args.model, "config.json")
+    model = model.to(DEVICE)
+    stoi = {}
+    for i, s in enumerate(itos):
+        stoi[s] = i
+
+    if args.live:
+        while True:
+            sentence = input("Enter the content(type q to exit): ")
+            if sentence == "q":
+                break
+            x = spacy_tokenize(sentence)
+            best_hypothesis = beam_search(
+                stoi, itos, model.encoder, model.decoder, x, 8, 20
+            )[0]
+            print("Predicted headline: ", best_hypothesis.value)
+    else:
+        df = pd.read_csv(args.input, encoding="utf-8")
+        df = df[~(df["content"].isnull())]
+        df = df[~(df["content"] == "[]")]
+        contents = df["content"].str.lower().tolist()
+        sentences = [spacy_tokenize(s)[:100] for s in contents]
+        titles = []
+        for i, x in tqdm(enumerate(sentences)):
+            best_hypothesis = beam_search(
+                stoi, itos, model.encoder, model.decoder, x, 8, 20
+            )[0]
+            titles.append(" ".join(best_hypothesis.value))
+        df = pd.DataFrame({"content": contents, "title": titles})
+        df.to_csv(args.output, encoding="utf-8", index=False)
+
+
+if __name__ == "__main__":
+    _main()

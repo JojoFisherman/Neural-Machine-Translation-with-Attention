@@ -66,8 +66,7 @@ class Decoder(nn.Module):
             inputs (torch.Tensor): A (batch, seq_len) tensor, within which
                 each sequence is a list of token IDs
             hidden (torch.Tensor): A (batch, num_layers, num_direction * hidden_size)
-                tensor containing the hidden state from the last layer
-                of the last time step
+                tensor containing the hidden state of the last time step
             encoder_outputs (torch.Tensor): A (batch, seq_len, hidden_size) tensor
                 containing the outputs of the encoder
             encoder_lengths (torch.Tensor): The source sequence length
