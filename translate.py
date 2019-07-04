@@ -164,7 +164,7 @@ def _main():
             sentence = input("Enter the content(type q to exit): ")
             if sentence == "q":
                 break
-            x = spacy_tokenize(sentence)
+            x = spacy_tokenize(sentence)[:100]
             best_hypothesis = beam_search(
                 stoi, itos, model.encoder, model.decoder, x, 8, 20
             )[0]
