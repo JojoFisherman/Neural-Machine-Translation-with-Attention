@@ -1,6 +1,9 @@
 import numpy as np
 import nltk
+from nltk.translate.bleu_score import SmoothingFunction
 from typing import List
+
+chencherry = SmoothingFunction()
 
 
 def evaluate_ppl(total_loss: float, n_predict_words: int):
@@ -17,6 +20,8 @@ def evaluate_bleu(
     true_sequence: List[str], predicted_sequence: List[str]
 ) -> float:
     score = nltk.translate.bleu_score.sentence_bleu(
-        [true_sequence], predicted_sequence
+        [true_sequence],
+        predicted_sequence,
+        smoothing_function=chencherry.method4,
     )
     return score
