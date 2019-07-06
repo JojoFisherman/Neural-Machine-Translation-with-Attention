@@ -190,7 +190,7 @@ def validate(dataloader, model, loss_fn, epoch, device):
                     idx2sentence(pred, dataloader.itos),
                 )
 
-    _loss = running_loss / running_total
+    _loss = running_loss / i + 1
     _score = running_scores / running_total
 
     progress_bar(msg={"val-loss": _loss, "bleu": _score}, train=False)
