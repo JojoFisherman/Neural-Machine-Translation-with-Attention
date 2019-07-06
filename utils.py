@@ -94,7 +94,7 @@ def progress_bar(
     #  if value == batch_size:
     if progress_bar.start:
         progress_bar.start = False
-        print(f"Epoch {epoch+1}/{n_epoch}", flush=True)
+        print(f"Epoch {epoch}/{n_epoch}", flush=True)
         #  progress_bar.start_time = time()
 
     if train:

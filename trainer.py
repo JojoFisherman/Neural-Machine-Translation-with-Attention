@@ -5,6 +5,7 @@ import os
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
 import argparse
+from torch.utils.tensorboard import SummaryWriter
 from preprocess import transform
 from utils import (
     progress_bar,
@@ -29,11 +30,13 @@ LR = 0.001
 RESCHEDULED = False
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+WRITER = SummaryWriter(log_dir="./logs")
 torch.backends.cudnn.benchmark = True
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--resume", "-r", action="store_true", help="Resume training"
 )
+parser.add_argument("--debug", action="store_true", help="Debug mode")
 parser.add_argument(
     "--savename",
     "-s",
@@ -135,7 +138,7 @@ def train(
             progress_bar(
                 running_total,
                 train_dataloader.n_examples,
-                epoch,
+                epoch + 1,
                 n_epochs,
                 {
                     "loss": _loss,
@@ -143,6 +146,8 @@ def train(
                     "ppl": evaluate_ppl(running_loss, n_predict_words),
                 },
             )
+
+        WRITER.add_scalar("train_loss", _loss, epoch + 1)
         _score = validate(val_dataloader, model, criterion, epoch, device)
         scheduler.step(_loss)
         save_checkpoint(
@@ -192,6 +197,8 @@ def validate(dataloader, model, loss_fn, epoch, device):
 
     _loss = running_loss / i + 1
     _score = running_scores / running_total
+    WRITER.add_scalar("val_loss", _loss, epoch + 1)
+    WRITER.add_scalar("val_bleu", _score, epoch + 1)
 
     progress_bar(msg={"val-loss": _loss, "bleu": _score}, train=False)
     return _score
@@ -203,15 +210,18 @@ def _main():
     config = get_params_dict("config.json")
     if args.resume:
         train_dataloader = NewsDataLoader(
-            csv_path="data/train.csv", use_save=True, debug=False
+            csv_path="data/train.csv", use_save=True, debug=args.debug
         )
     else:
         train_dataloader = NewsDataLoader(
-            csv_path="data/train.csv", save=True, debug=False
+            csv_path="data/train.csv", save=True, debug=args.debug
         )
 
     val_dataloader = NewsDataLoader(
-        csv_path="data/val.csv", build_vocab=False, use_save=True, debug=False
+        csv_path="data/val.csv",
+        build_vocab=False,
+        use_save=True,
+        debug=args.debug,
     )
 
     train(
