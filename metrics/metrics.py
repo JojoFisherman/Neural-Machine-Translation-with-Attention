@@ -22,6 +22,6 @@ def evaluate_bleu(
     score = nltk.translate.bleu_score.sentence_bleu(
         [true_sequence],
         predicted_sequence,
-        smoothing_function=chencherry.method4,
+        #  smoothing_function=chencherry.method4,
     )
     return score
