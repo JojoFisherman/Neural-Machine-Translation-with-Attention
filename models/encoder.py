@@ -18,6 +18,7 @@ class Encoder(nn.Module):
         n_layers: int = 1,
         bidir: bool = False,
         rnn_type: str = "lstm",
+        dropout_p: float = 0.2,
     ):
         """
         Args:
@@ -30,6 +31,7 @@ class Encoder(nn.Module):
         """
         super().__init__()
 
+        self.dropout = nn.Dropout(dropout_p)
         self.n_dir = 2 if bidir else 1
         self.n_layers = n_layers
         self.hidden_dim = hidden_dim
@@ -48,6 +50,7 @@ class Encoder(nn.Module):
             n_layers,
             batch_first=True,
             bidirectional=bidir,
+            dropout=dropout_p,
         )
 
     def init_hidden(self, batch_size: int):
@@ -112,6 +115,7 @@ class Encoder(nn.Module):
 
         total_length = inputs.shape[1]
         embedded = self.embedding(inputs)
+        embedded = self.dropout(embedded)
         packed = pack_padded_sequence(
             embedded, input_lengths, batch_first=True
         )

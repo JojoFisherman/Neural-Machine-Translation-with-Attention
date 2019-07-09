@@ -15,7 +15,7 @@ class StackedLSTM(nn.Module):
         input_dim: int,
         hidden_dim: int,
         n_layers: int,
-        dropout_p: float = 0.5,
+        dropout_p: float = 0.2,
     ):
         """
         Args:

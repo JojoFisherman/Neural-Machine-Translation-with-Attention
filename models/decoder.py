@@ -15,7 +15,7 @@ class Decoder(nn.Module):
         embedding: nn.Module,
         hidden_dim: int,
         n_layers: int = 1,
-        dropout_p: float = 0.5,
+        dropout_p: float = 0.2,
         rnn_type: str = "lstm",
     ):
         """

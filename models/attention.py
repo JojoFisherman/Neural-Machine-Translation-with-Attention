@@ -15,7 +15,7 @@ class Attention(nn.Module):
     of size `hidden_dim`.
     """
 
-    def __init__(self, hidden_dim, attn_type="general"):
+    def __init__(self, hidden_dim, dropout_p=0.2, attn_type="general"):
         super().__init__()
         assert attn_type in [
             "dot",
@@ -23,6 +23,7 @@ class Attention(nn.Module):
         ], "Please select a valid attention type (got {:s}).".format(attn_type)
 
         self.attn_type = attn_type
+        self.dropout = nn.Dropout(dropout_p)
         if self.attn_type == "general":
             self.w_a = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.w_c = nn.Linear(hidden_dim * 2, hidden_dim, bias=False)
@@ -108,5 +109,6 @@ class Attention(nn.Module):
 
         # attentional hidden state: (batch, hidden_dim)
         attn_h = torch.tanh(self.w_c(concat_c_h))
+        attn_h = self.dropout(attn_h)
 
         return attn_h
